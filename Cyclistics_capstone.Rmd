@@ -1,0 +1,1760 @@
+---
+title: "Cyclistics Capstone Analysis"
+author: "Jonathan Donovan"
+date: "2025-05-05"
+output:
+  html_document:
+    theme: flatly
+    fig_caption: true
+    fig_width: 8
+    fig_height: 5
+    toc: true
+    toc_float: true
+    toc_depth: 1
+    number_sections: false
+    self_contained: true
+    
+---
+
+```{css, echo=FALSE}
+details > summary {
+  color: #333;
+  font-weight: bold;
+}
+/* Increase spacing for main sections */
+h2 {
+  margin-top: 3em !important;
+  padding-top: 0.5em !important;
+}
+
+details {
+  margin-bottom: 1.2em !important;
+}
+details[open] {
+  margin-bottom: 1.2em !important;
+}
+
+/* Optional: reduce margin below code blocks for even spacing */
+details pre, details code {
+  margin-bottom: 0 !important;
+}
+
+/* Enhance floating TOC panel */
+details > summary {
+  color: #333;
+  font-weight: bold;
+}
+
+/* Style the static TOC (if used elsewhere in the doc) */
+#TOC {
+  background-color: #f9f9f9;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  margin-bottom: 20px;
+}
+
+/* Floating TOC always on the left */
+div.tocify {
+  width: 300px !important;
+  min-width: 200px !important;
+  max-width: 350px !important;
+  left: 2vw !important;
+  right: auto !important;
+  position: fixed !important;
+  top: 70px !important;
+  z-index: 1000 !important;
+  background: #fff !important;
+  border-radius: 8px !important;
+  box-shadow: 0 0 12px #ddd !important;
+}
+
+/* Prevent content from hiding under TOC */
+.main-container, .container {
+  margin-left: 100px !important;   /* Matches or exceeds TOC width + padding */
+}
+
+#TOC ul {
+  list-style-type: none;
+  padding-left: 20px;
+}
+#TOC li {
+  margin: 5px 0;
+}
+#TOC a {
+  text-decoration: none;
+  color: #1f77b4;
+}
+#TOC a:hover {
+  text-decoration: underline;
+}
+
+/* Hide TOC and reset margin on small screens */
+@media (max-width: 900px) {
+  div.tocify {
+    display: none !important;
+  }
+  .main-container, .container {
+    margin-left: 0 !important;
+  }
+}
+```
+```{r setup, include=FALSE}
+# Global knit options
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  eval = TRUE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 5,
+  out.width = "100%"
+)
+
+# Load libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(skimr)
+library(readr)
+library(knitr)
+library(kableExtra)
+library(scales)
+library(ggforce)
+library(cowplot)
+library(ggtext)
+library(purrr)
+library(jsonlite)
+library(httr)
+
+# Define global color palette
+cyclistics_colors <- c(
+  "member" = "#1f77b4",   # Blue
+  "casual" = "#ff7f0e"    # Orange
+)
+
+# Set consistent ggplot2 theme
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      axis.title = element_text(face = "bold"),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )
+)
+```
+
+# 1. Executive Summary
+
+This capstone project, part of the Google Data Analytics Certificate, analyzes the fictional company Cyclistics 2024 bike-share data to understand how casual riders and annual members use the service differently, informing a marketing strategy focused on conversion. Key findings highlight distinct usage patterns to guide targeted efforts.
+
+Trip Patterns: Casual riders take longer, weekend-heavy recreational trips; members have shorter, consistent commutes.
+Seasonality: Casual rides peak in July–August, dropping sharply post-summer; members maintain steadier year-round engagement.
+Timing: Members peak during commute hours (7–9 AM, 4–6 PM); casual riders favor midday (11 AM–3 PM) and weekends.
+Stations: Casual riders frequent tourist areas (e.g., Streeter Dr & Grand Ave); members use business hubs (e.g., Kingsbury St & Kinzie St).
+Ride Type: Classic bikes dominate for both groups; casual riders show greater use of electric bikes and scooters.
+Recommendations: Use a location service API (Google used in in this analysis) to target marketing at tourist-heavy stations during summer, promoting annual memberships to casual riders by emphasizing year-round utility.
+
+# 2. About Cyclistic
+
+Cyclistic operates a fleet of **5,824 bicycles** across **692 docking
+stations** in Chicago. The company offers flexible pricing options
+including single rides, day passes, and annual memberships.
+
+-   Approximately **30%** of users commute to work.
+-   The remainder primarily use bikes for leisure.
+
+# 3. Key Roles
+
+-   **Lily Moreno** – Director of Marketing\
+-   **Marketing Analytics Team** – Internal analysts studying user
+    behavior\
+-   **Executive Team** – Final decision makers on marketing initiatives
+
+# 4. Business Task
+
+The marketing team has posed three strategic questions:
+
+1.  How do annual members and casual riders use Cyclistic bikes
+    differently?\
+2.  Why would casual riders consider becoming annual members?\
+3.  How can digital media influence casual riders to convert?
+
+This project focuses on answering **Question 1** through deep analysis
+of ride data.
+
+### Specific Questions Answered
+
+-   What is the average ride duration for each rider type?
+-   How does ride duration vary by day of week and by month?
+-   What is the total number of rides per day for both groups?
+-   What are the busiest ride hours?
+-   Do patterns differ between weekdays and weekends?
+-   What type of bike is most used by each group?
+-   What stations are most used overall and by user type?
+
+# 5. Data Source, Tools and Setup
+
+This section documents the dataset origin, tools used, and the creation
+of a working dataset to support all downstream validation and analysis.
+
+
+<details>
+<summary><strong>Show Details</strong></summary>
+
+### 5.1 Data Source and Credibility
+
+Cyclistics data was downloaded from the [Divvy Bikes public
+portal](https://divvy-tripdata.s3.amazonaws.com/index.html). It covers
+January through December 2024 and includes a total of 5,860,568 ride
+records. The dataset is assumed complete and reliable for analysis.
+
+### 5.2 Tools and Packages
+
+All analysis was conducted in R using RStudio. The following packages
+were used:
+
+**Data Cleaning and Transformation**\
+- `dplyr`, `tidyr` – data manipulation\
+- `janitor` – column name cleanup and frequency tables\
+- `lubridate` – datetime parsing
+
+**Visualization**\
+- `ggplot2` – charting\
+- `scales` – axis label formatting
+
+**Reporting and Output**\
+- `knitr`, `kableExtra` – table and report rendering\
+- `skimr` – compact column summaries
+
+<details>
+
+<summary><strong>Show Package Installation Commands</strong></summary>
+
+```{r, eval=FALSE}
+# install.packages("tidyverse")
+# install.packages("readr")
+# install.packages("lubridate")
+# install.packages("dplyr")
+# install.packages("janitor")
+# install.packages("knitr")
+# install.packages("tidyr")
+# install.packages("scales")
+# install.packages("kableExtra")
+# install.packages("skimr")
+```
+
+</details>
+
+### 5.3 Load Raw Dataset
+
+The raw data is loaded into `original_data`, then previewed to verify
+structure and dimensions.
+
+<details>
+
+<summary><strong>Show Code</strong></summary>
+
+```{r load-data, cache=TRUE}
+# Load raw, combined dataset from CSV file
+original_data <- read_csv("C:\\Users\\jonwd\\Documents\\R_docs\\Cyclistics_Project_Data\\Capstone_files\\original_data.csv")
+
+# Track row count
+row_count_original <- nrow(original_data)
+
+# Preview first 5 rows instead of glimpse
+head(original_data, 5)
+```
+
+</details>
+
+Results: - The raw dataset was successfully loaded into 'original_data'
+with a total of 5,860,568 rows.
+
+### 5.4 Create Working Dataset
+
+To support consistent filtering and analysis, we create a new working
+dataset ('cyclistics_data') that includes the following derived fields:
+
+-   ride_length: Ride duration in whole minutes (rounded)
+-   day_of_week: Full weekday name (week starts on Sunday)
+-   hour_of_day: Ride start hour (0–23)
+-   month: Labeled month (e.g., January)
+-   These fields are computed from the original timestamp columns.
+
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r create-working-data, cache=TRUE}
+cyclistics_data <- original_data %>%
+  mutate(
+    ride_length = as.numeric(difftime(ended_at, started_at, 
+                                      units = "mins")),
+    ride_length = round(ride_length, 0),
+    day_of_week = wday(started_at, label = TRUE, abbr = FALSE, 
+                        week_start = 7),
+    hour_of_day = hour(started_at),
+    month = month(started_at, label = TRUE, abbr = FALSE)
+  )
+```
+</details>
+
+
+Results: The new working dataset, 'cyclistics_data', includes all
+original fields plus the four derived columns listed above. This dataset
+will be used for all further validation and analysis. Row count:
+5,860,568
+
+# 6. Data Cleaning
+
+This section ensures the dataset is reliable for analysis by applying validation and preparation steps to remove incomplete, invalid, or untrustworthy records. Each step addresses specific data quality issues to support accurate insights into Cyclistic’s rider patterns.
+
+<details>
+<summary><strong>Show Details</strong></summary>
+
+### 6.1 Identify Rows with Insufficient Data
+
+We check for empty strings in critical fields (`ride_id`, `started_at`, `ended_at`, `member_casual`, `rideable_type`) in `cyclistics_data`, replacing them with `NA` for consistency. Rows missing essential fields (`ride_id`, `started_at`, `ended_at`, `member_casual`) are identified for later removal.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r identify-insufficient-data, cache=TRUE}
+# Define critical fields
+critical_fields <- c("ride_id", "started_at", "ended_at", "member_casual", 
+                     "rideable_type")
+
+# Note: cyclistics_data is defined in Section 5.4
+# Identify character columns among critical fields
+char_fields <- critical_fields[sapply(cyclistics_data[critical_fields], is.character)]
+
+# Check for empty strings in character fields
+if (length(char_fields) == 0) {
+  has_empty <- logical(0)
+  message("No character fields to check for empty strings; skipping transformation.")
+} else {
+  has_empty <- sapply(char_fields, function(col) {
+    any(cyclistics_data[[col]] == "", na.rm = TRUE)
+  })
+  if (any(has_empty)) {
+    fields_to_transform <- char_fields[has_empty]
+    cyclistics_data <- cyclistics_data %>%
+      mutate(
+        across(
+          all_of(fields_to_transform),
+          ~ na_if(trimws(.), "")
+        )
+      )
+  } else {
+    message("No empty strings found in character fields; skipping transformation.")
+  }
+}
+
+# Identify rows with insufficient data (missing critical fields)
+insufficient_rows <- cyclistics_data %>%
+  filter(
+    is.na(ride_id) | 
+    is.na(started_at) | 
+    is.na(ended_at) | 
+    is.na(member_casual)
+  ) %>%
+  nrow()
+
+# Free memory
+gc()
+```
+</details>
+
+
+**Results:**\
+
+Empty strings in critical fields (ride_id, started_at, ended_at, member_casual, rideable_type) were replaced with NA.
+Identified 44 rows with insufficient data (missing ride_id, started_at, ended_at, or member_casual) for later removal.
+Row count unchanged: 5,860,568.
+
+### 6.2 Verify Data Types
+
+We verify that the `started_at` and `ended_at` fields in
+`cyclistics_data` are properly formatted datetime objects, enabling accurate time-based calculations (e.g., ride durations).
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r verify-dates}
+library(tidyverse) # Load tidyverse for %>%
+# Check the class of started_at and ended_at
+data.frame(
+  Column = c("started_at", "ended_at"),
+  Class = c(class(cyclistics_data$started_at)[1], class(cyclistics_data$ended_at)[1])
+) %>%
+  knitr::kable() %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+```
+</details>
+
+**Results:**\
+Confirmed `started_at` and `ended_at` are `POSIXct`, a format R uses to store dates and times for accurate calculations, like ride durations and monthly patterns. 
+Row count unchanged: 5,860,568
+
+### 6.3 Verify Categorical Fields
+
+We verify that rideable_type and member_casual fields in cyclistics_data are standardized to ensure consistent visualizations and reporting.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+```{r verify-categorical}
+# Compute and display unique levels
+rideable_levels <- unique(cyclistics_data$rideable_type)
+member_levels <- unique(cyclistics_data$member_casual)
+
+cat("Unique rideable_type values:", paste(rideable_levels, collapse = ", "), "\n")
+cat("Unique member_casual values:", paste(member_levels, collapse = ", "), "\n")
+```
+
+```{r}
+# Free memory
+gc()
+```
+</details>
+
+
+**Results:**\
+Confirmed rideable_type values: electric_bike, classic_bike, electric_scooter.
+Confirmed member_casual values: member, casual.
+Row count unchanged: 5,860,568.
+
+### 6.4 Validate Minimum Required Fields
+
+We check for missing values in key fields of `cyclistics_data` required
+for ride-level analysis or mapping.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r validate-fields, cache=TRUE, results="asis"}
+# Summarize missing values
+missing_data <- cyclistics_data %>%
+  summarise(
+    `Ride ID` = sum(is.na(ride_id)),
+    `Rideable Type` = sum(is.na(rideable_type)),
+    `Start Station` = sum(is.na(start_station_name) & is.na(start_station_id)),
+    `End Station` = sum(is.na(end_station_name) & is.na(end_station_id)),
+    `Start Time` = sum(is.na(started_at)),
+    `End Time` = sum(is.na(ended_at)),
+    `User Type` = sum(is.na(member_casual)),
+    `Start Coordinates` = sum(is.na(start_lat) & is.na(start_lng)),
+    `End Coordinates` = sum(is.na(end_lat) & is.na(end_lng))
+  )
+
+# Convert to long format and filter non-zero missing values
+missing_data_long <- missing_data %>%
+  pivot_longer(everything(), names_to = "Field", values_to = "Missing Count") %>%
+  filter(`Missing Count` > 0)
+
+# Display as a table (if there are missing values)
+if (nrow(missing_data_long) > 0) {
+  missing_data_long %>%
+    knitr::kable() %>%
+    kableExtra::kable_styling(full_width = FALSE, position = "left")
+} else {
+  cat("No missing values found in required fields.\n")
+}
+```
+
+```{r echo=FALSE, results="hide"}
+# Free memory
+gc()
+```
+</details>
+
+
+**Results:**\
+Fields with missing values:
+Start Station: 1,073,951 rows
+End Station: 1,104,653 rows
+Start Time and End Time: 44 rows each
+End Coordinates: 7,232 rows
+Other fields (Ride ID, Rideable Type, User Type, Start Coordinates) have no missing values.
+Row count unchanged: 5,860,568.
+
+### 6.5 Count Records to be Removed
+
+We calculate the number and proportion of rows that fail any critical
+data checks.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r count-records-to-remove, cache=TRUE}
+rows_to_remove <- cyclistics_data %>%
+  filter(
+    is.na(ride_id) |
+    is.na(started_at) |
+    is.na(ended_at) |
+    is.na(member_casual) |
+    (is.na(start_station_name) & is.na(start_station_id)) |
+    (is.na(end_station_name) & is.na(end_station_id))
+  ) %>%
+  summarise(rides_to_remove = n()) %>%
+  pull(rides_to_remove)
+
+total_rows <- nrow(cyclistics_data)
+removal_ratio <- rows_to_remove / total_rows
+
+data.frame(
+  `Rows to Remove` = format(rows_to_remove, big.mark = ","),
+  `Total Rows` = format(total_rows, big.mark = ","),
+  `Removal Ratio` = scales::percent(removal_ratio, accuracy = 0.01)
+) %>%
+  knitr::kable() %>%
+  kableExtra::kable_styling(full_width = FALSE)
+```
+
+```{r echo=FALSE, results="hide"}
+# Free memory
+gc()
+```
+</details>
+
+
+**Results:**
+Rows to remove: 1,652,289
+Total rows: 5,860,568
+Removal ratio: 28.20%
+These records, often missing station identifiers or timestamps, will be excluded to ensure reliable analysis.
+
+### 6.6 Check for Duplicate Ride IDs
+
+We check for duplicate `ride_id` values in `cyclistics_data`, as each
+ride should have a unique identifier.
+
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r check-duplicate-ride-ids, cache=TRUE}
+# Count occurrences of each ride_id and identify duplicates
+duplicate_stats <- cyclistics_data %>%
+  count(ride_id) %>%
+  filter(n > 1)
+
+# Number of unique ride_ids with duplicates
+duplicate_ids <- nrow(duplicate_stats)
+
+# Total number of duplicate records (beyond the first occurrence)
+duplicate_records <- sum(duplicate_stats$n) - nrow(duplicate_stats)
+
+cat(format(duplicate_ids, big.mark = ","), "unique `ride_id`s with duplicates identified, totaling", 
+    format(duplicate_records, big.mark = ","), "duplicate records.\n")
+```
+
+```{r echo=FALSE, results="hide"}
+# Free memory
+gc()
+```
+</details>
+
+
+**Results:**\
+Identified 211 unique ride_ids with duplicates, totaling 211 duplicate records.
+These will be removed (keeping the first occurrence) to maintain data integrity.
+Row count unchanged: 5,860,568.
+
+### 6.7 Identify Short Rides
+
+We identify rides in `cyclistics_data` with a duration of 1 minute or
+less, which may indicate system tests or early cancellations.
+
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r identify-short-rides, cache=TRUE}
+short_rides <- cyclistics_data %>%
+  filter(ride_length <= 1) %>%
+  summarise(short_rides = n()) %>%
+  pull(short_rides)
+
+cat(format(short_rides, big.mark = ","), "rides identified.\n")
+```
+
+```{r echo=FALSE, results="hide"}
+# Free memory
+gc()
+```
+</details>
+
+
+**Results:**\
+Identified 173,661 rides with a duration of 1 minute or less, likely system tests or cancellations.
+These will be removed to ensure data quality.
+Row count unchanged: 5,860,568.
+
+### 6.8 Apply Validation Filters and generate data for exploratory analysis.
+
+We now apply all previously defined filters to remove incomplete,
+duplicate, or low-quality records.
+
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r apply-validation-filters, cache=TRUE}
+eda_data <- cyclistics_data %>%
+  # Remove duplicates
+  distinct(ride_id, .keep_all = TRUE) %>%
+  # Apply filters for missing critical fields
+  filter(
+    !is.na(ride_id),
+    !is.na(started_at),
+    !is.na(ended_at),
+    !is.na(member_casual),
+    !(is.na(start_station_name) & is.na(start_station_id)),
+    !(is.na(end_station_name) & is.na(end_station_id)),
+    # Exclude short rides and negative durations
+    ride_length > 1,
+    ride_length >= 0
+  )
+
+rows_removed <- nrow(cyclistics_data) - nrow(eda_data)
+removal_ratio <- rows_removed / nrow(cyclistics_data)
+
+data.frame(
+  `Final Row Count` = format(nrow(eda_data), big.mark = ","),
+  `Rows Removed` = format(rows_removed, big.mark = ","),
+  `Removal Ratio` = scales::percent(removal_ratio, accuracy = 1)
+) %>%
+  knitr::kable() %>%
+  kableExtra::kable_styling(full_width = FALSE)
+# Save the cleaned dataset to a new CSV file
+write_csv(eda_data, "C:\\Users\\jonwd\\Documents\\R_docs\\Cyclistics_Project_Data\\Capstone_files\\eda_data.csv")
+```
+
+```{r echo=FALSE, results="hide"}
+# Free memory
+gc()
+```
+</details>
+
+
+**Results:**\
+Final dataset (eda_data): 4,142,075 rows.
+Removed: 1,718,493 rows (29.33% of original dataset).
+Many rows failed multiple criteria (e.g., missing stations, duplicates, short rides), ensuring a robust dataset for analysis.
+
+# 7. Analysis and Findings
+
+This section analyzes `eda_data` to compare casual riders and annual
+members’ usage patterns, addressing Section 4’s business questions. We
+trim rides of extreme duration, then explore ride length, daily/monthly
+patterns, peak hours, weekday/weekend differences, bike preferences, and
+popular stations using summary statistics and `ggplot2` visualizations.
+
+<details>
+<summary><strong>Show Details</strong></summary>
+
+### 7.1 Initial Look - Outliers
+
+We use the Interquartile Range (IQR) to identify unusually short or long
+ride durations, calculated as rides below Q1 - 1.5 \* IQR or above Q3 +
+1.5 \* IQR. The IQR method spots unusual data by measuring the spread of
+the middle 50% of ride times. It flags rides far beyond this range as
+outliers, helping us focus on common patterns without complex
+assumptions.
+
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r iqr-outliers, cache=TRUE, echo=TRUE}
+# Ensure ride_length is numeric
+eda_data <- eda_data %>% mutate(ride_length = as.numeric(ride_length))
+
+# Calculate IQR bounds
+q1 <- quantile(eda_data$ride_length, 0.25)
+q3 <- quantile(eda_data$ride_length, 0.75)
+iqr <- q3 - q1
+lower_bound <- max(0, q1 - 1.5 * iqr)  # Prevent negative durations
+upper_bound <- q3 + 1.5 * iqr
+
+# Permanently add is_outlier column to eda_data
+eda_data <- eda_data %>%
+  mutate(is_outlier = ride_length > upper_bound)
+
+# Count outliers
+outliers <- eda_data %>% filter(ride_length < lower_bound | ride_length > upper_bound)
+outlier_count <- nrow(outliers)
+total_rides <- nrow(eda_data)
+
+# Display results
+cat("Q1 (25th percentile):", round(q1, 1), "minutes\n")
+cat("Q3 (75th percentile):", round(q3, 1), "minutes\n")
+cat("IQR:", round(iqr, 1), "minutes\n")
+cat("Lower bound:", round(lower_bound, 1), "minutes\n")
+cat("Upper bound:", round(upper_bound, 1), "minutes\n")
+cat("Total rides:", format(total_rides, big.mark = ","), "\n")
+cat("Outlier rides:", format(outlier_count, big.mark = ","), "\n")
+cat("Outlier percentage:", scales::percent(outlier_count / total_rides, accuracy = 0.1), "\n")
+```
+
+```{r echo=FALSE, results="hide"}
+# Free memory
+gc()
+```
+</details>
+
+**Results:**\
+The IQR method flags 333,428 rides (8.0% of 4,142,075) with durations ≥36 minutes as outliers.
+Section 6.8 removed all rides under 2 minutes in duration.
+The bar chart below categorizes ride durations, distinguishing typical rides (≤36 minutes) from outliers (>36 minutes), ensuring subsequent analyses focus on common rider behavior.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+```{r calc-ride-bins, cache=TRUE, echo=TRUE, fig.width=8, fig.height=5, fig.show="asis"}
+library(ggplot2)
+library(dplyr)
+library(ggbreak)
+library(scales)
+
+total_rides <- nrow(eda_data)
+ride_bins <- eda_data %>%
+  mutate(
+    bin = case_when(
+      ride_length <= 36.0 ~ "≤ 36.0 minutes (Retained)",
+      ride_length > 36.0 ~ "> 36.0 minutes (Outliers)"
+    ),
+    bin = factor(bin, levels = c("≤ 36.0 minutes (Retained)", "> 36.0 minutes (Outliers)"))
+  ) %>%
+  group_by(bin) %>%
+  summarise(count = n()) %>%
+  mutate(
+    percent = count / total_rides * 100,
+    label = sprintf("%s (%s%%)", comma(count), round(percent, 1)),
+    vjust = -0.8
+  )
+
+# Store plot
+duration_bar_plot <- ggplot(ride_bins, aes(x = bin, y = count, fill = bin)) +
+  geom_bar(stat = "identity", color = "white") +
+  geom_text(aes(label = label, vjust = vjust), size = 4) +
+  scale_fill_manual(values = c(
+    "≤ 36.0 minutes (Retained)" = "darkorange",
+    "> 36.0 minutes (Outliers)" = "grey"
+  )) +
+  labs(
+    title = "Ride Duration Categories (IQR Method)",
+    x = "Ride Duration Category",
+    y = "Number of Rides",
+    fill = "Category",
+    caption = "> 36.0 minutes truncated; y-axis compressed."
+  ) +
+  scale_y_continuous(limits = c(0, 4800000), labels = comma, expand = expansion(mult = c(0, 0.1))) +
+  scale_y_break(c(400000, 3000000), scales = "free", space = 0.2) + # to truncate chart for clarity
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    legend.position = "bottom",
+    axis.title.x = element_text(hjust = 0.5),
+    plot.caption = element_text(hjust = 0.5)
+  )
+```
+
+```{r flag-outliers, echo=TRUE, eval=TRUE}
+# Tag outliers within eda_data
+eda_data <- eda_data %>%
+  mutate(is_outlier = ride_length > 36.0)
+
+# Count flagged and retained rides
+outlier_total <- sum(eda_data$is_outlier)
+valid_total <- sum(!eda_data$is_outlier)
+total_rows <- nrow(eda_data)
+outlier_pct <- round(100 * outlier_total / total_rows, 1)
+```
+</details>
+
+```{r echo=FALSE}
+duration_bar_plot
+```
+
+
+**Results**:
+All subsequent analyses will exclude 333,428 outlier rides (≥36 minutes) using `filter(!is_outlier)`, focusing on typical patterns to inform marketing strategies. Long rides warrant future investigation to understand niche usage behaviors.
+
+### 7.2 Monthly Ride Volume by rider type
+
+This analysis excludes outlier rides longer than 36 minutes (as flagged
+in Section 7.2). The line chart below highlights the top 3 months for
+each rider group using circular markers and floating labels. This style
+echoes the visual language used in the hourly dot chart later in the
+report.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r monthly-ride-volume, cache=TRUE, echo=TRUE}
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(lubridate)
+
+# Define colors locally
+cyclistics_colors <- c(
+  "member" = "#1f77b4",   # Blue
+  "casual" = "#ff7f0e"    # Orange
+)
+
+# Prepare data: filter outliers, summarize by month and rider type
+monthly_data <- eda_data %>%
+  filter(!is_outlier) %>%
+  mutate(month = month(started_at, label = TRUE, abbr = FALSE)) %>%
+  group_by(member_casual, month) %>%
+  summarise(rides = n(), .groups = "drop") %>%
+  mutate(
+    month = factor(month, levels = month.name),
+    member_casual = factor(member_casual, levels = c("casual", "member")),
+    
+  )
+
+# Identify top 3 months for each rider type
+monthly_labels <- monthly_data %>%
+  group_by(member_casual) %>%
+  slice_max(order_by = rides, n = 3) %>%
+  ungroup() %>%
+  mutate(label = comma(rides))
+
+# Build the plot
+monthly_line_plot <- ggplot(monthly_data, aes(x = month, y = rides, group = member_casual, color = member_casual)) +
+  geom_line(size = 1.2) +
+  geom_point(
+    data = monthly_labels,
+    aes(x = month, y = rides),
+    shape = 21,
+    fill = "white",
+    stroke = 1.2,
+    size = 4,
+    inherit.aes = FALSE
+  ) +
+  geom_label(
+    data = monthly_labels,
+    aes(x = month, y = rides + 20000, label = label),
+    fill = "white",
+    label.size = 0.2,
+    size = 3.5,
+    fontface = "bold",
+    label.padding = unit(0.2, "lines"),
+    label.r = unit(0.2, "lines"),
+    inherit.aes = FALSE,
+    show.legend = FALSE
+  ) +
+  scale_color_manual(values = cyclistics_colors) +
+  scale_y_continuous(labels = comma, limits = c(0, 340000)) +
+  labs(
+    title = "Monthly Ride Volume by Rider Type",
+    subtitle = "Top 3 months labeled",
+    x = "Month",
+    y = "Total Rides",
+    color = "Rider Type"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.position = "bottom"
+  )
+
+# Save plot
+ggsave("monthly_lineplot_top3_v9.png", plot = monthly_line_plot, width = 8, height = 4.8, dpi = 150)
+
+```
+</details>
+```{r echo=FALSE}
+knitr::include_graphics("monthly_lineplot_top3_v9.png")
+```
+
+
+**Results:**\
+Both rider groups show strong seasonal trends, with casual usage peaking
+in July and August and member usage peaking slightly later in September.
+Casual rides drop sharply after summer, while member rides remain higher
+into the fall, indicating more consistent year-round engagement. These
+trends suggest casual riders are primarily recreational, while members
+include commuters or frequent users less sensitive to seasonality 
+
+### 7.3 Total Rides by Rider Type
+
+To compare overall usage by rider type, we calculated total rides for
+casual and member riders, excluding rides longer than 36 minutes, as
+flagged in Section 7.2. The donut chart and summary table below reflect
+only rides considered typical (ride_length ≤ 36.0).
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r rides-by-rider-type, cache=TRUE, dependson="load-cleaned-data"}
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+output_dir <- "Cyclistics_Project_Data/V9"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+output_file <- file.path(output_dir, "rider_type_summary.csv")
+
+rider_type_summary <- eda_data %>%
+  filter(!is_outlier) %>%  # <-- new line: exclude outlier rides
+  mutate(member_casual = tolower(trimws(member_casual))) %>%   # <--- NEW: enforce color match
+  group_by(member_casual) %>%
+  summarise(total_rides = n(), .groups = "drop") %>%
+  mutate(
+    proportion = total_rides / sum(total_rides),
+    percent_label = sprintf("%s\n%s\n%s%%", member_casual, format(total_rides, big.mark = ","), round(proportion * 100)),
+    total_rides_label = format(sum(total_rides), big.mark = ",")
+  )
+
+rider_type_summary %>%
+  select(member_casual, total_rides, percent = proportion) %>%
+  mutate(
+    total_rides = format(total_rides, big.mark = ","),
+    percent = scales::percent(percent, accuracy = 1)
+  ) %>%
+  knitr::kable(caption = "Total Rides by Rider Type") %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+write_csv(rider_type_summary, output_file)
+```
+</details>
+
+```{r rider-type-summary, cache=TRUE, echo=FALSE }
+ggplot(rider_type_summary, aes(x = 1, y = total_rides, fill = member_casual)) +
+  geom_bar(stat = "identity", width = 0.45, color = NA) +
+  coord_polar(theta = "y") +
+  geom_text(
+    aes(x = 1.6, label = percent_label),
+    position = position_stack(vjust = 0.5),
+    color = "black",
+    size = 4,
+    lineheight = 0.8
+  ) +
+  annotate(
+    "text",
+    x = 0,
+    y = 0,
+    label = paste("Total Rides\n", rider_type_summary$total_rides_label[1]),
+    size = 4
+  ) +
+  scale_fill_manual(values = cyclistics_colors) +
+  labs(
+    title = "Proportion of Total Rides by Rider Type",
+    fill = "User Type",
+    caption = "Outlier rides (> 36 minutes) excluded per Section 7.2."
+  ) +
+  theme_void(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.caption = element_text(hjust = 0.5),
+    plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")
+  )
+```
+
+
+**Results:**\
+The table summarizes total rides and percentages for each rider type.
+The dataset rider_type_summary.csv is exported for Tableau. The donut
+chart visualizes the proportion of rides, with members typically having
+a higher share (e.g., \~60%) than casual riders (e.g., \~40%).
+
+
+
+### 7.4 Average Ride Duration by Day
+
+This section examines the average ride duration for casual riders and
+annual members by day of the week, focusing on typical rides
+(`ride_length <= 36.0` minutes) to exclude outliers.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+
+```{r avg-ride-duration-by-day, cache=TRUE, dependson="load-cleaned-data"}
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+output_dir <- "Cyclistics_Project_Data/V9"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+output_file <- file.path(output_dir, "avg_ride_duration_by_day.csv")
+
+# Calculate average ride duration by rider type and day, filtering ride_length <= 36.0
+avg_ride_duration <- eda_data %>%
+  filter(!is_outlier) %>%
+  group_by(member_casual, day_of_week) %>%
+  summarise(
+    avg_duration = mean(ride_length, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    avg_duration = round(avg_duration, 1),
+    day_of_week = factor(day_of_week, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+  )
+
+# Display table
+avg_ride_duration %>%
+  pivot_wider(
+    names_from = member_casual,
+    values_from = avg_duration
+  ) %>%
+  knitr::kable(caption = "Average Ride Duration (Minutes) by Day and Rider Type") %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+# Export to CSV
+write_csv(avg_ride_duration, output_file)
+```
+</details>
+
+
+Visualization The bar chart below compares the average ride duration by
+day for each rider type.
+
+```{r echo=FALSE}
+# Round avg_duration to whole numbers for labels
+avg_ride_duration_plot <- avg_ride_duration %>%
+  mutate(
+    label = round(avg_duration, 0)
+  )
+
+ggplot(avg_ride_duration_plot, aes(x = day_of_week, y = avg_duration, fill = member_casual)) +
+  geom_bar(stat = "identity", position = "dodge", color = "white") +
+  geom_text(
+    aes(label = label),
+    position = position_dodge(width = 0.9),
+    vjust = -0.5,
+    size = 4,
+    color = "black"
+  ) +
+  scale_fill_manual(values = cyclistics_colors) +
+  scale_y_continuous(limits = c(0, 18), expand = expansion(mult = c(0, 0.1))) +
+  labs(
+    title = "Average Ride Duration by Day and Rider Type",
+    x = "Day of Week",
+    y = "Average Ride Duration (Minutes)",
+    fill = "User Type",
+    caption = "Rides > 36.0 minutes excluded."
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.caption = element_text(hjust = 0.5)
+  )
+```
+
+**Results:**\
+Casual riders consistently take longer trips than members, regardless of
+the day of the week. Weekdays show stable, shorter ride durations for
+both groups, reflecting typical commuting or utility trips. On weekends,
+both groups extend their rides somewhat, but the effect is much more
+pronounced among casual riders—suggesting more recreational or
+leisure-oriented usage patterns. Overall there is not a large enough
+difference in ride time to suggest action.
+
+
+## 7.5 Time of day usage
+
+To examine ride timing behavior, we analyzed when rides occur throughout
+the day, grouped into 2-hour intervals. This analysis includes only
+typical rides (≤ 36 minutes), as defined in Section 7.2, to avoid
+distortion from outlier activity. The dot chart below shows the proportion of rides per time block, by day of the week and rider type. Dot size indicates the share of rides for that day and rider group. Color intensity reflects each rider group’s daily peak activity — the
+darkest dots mark the most active time blocks.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+```{r hourly-dot-chart-code, eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE, fig.height=12}
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+# Define rider colors if not already set
+cyclistics_colors <- c(
+  "member" = "#1f77b4",  # Blue
+  "casual" = "#ff7f0e"   # Orange
+)
+
+# Prepare and count hourly ride shares
+hourly_data <- eda_data %>%
+  filter(!is_outlier, !is.na(hour_of_day)) %>%
+  mutate(
+    hour_block = floor(hour_of_day / 2) * 2,
+    time_label = sprintf("%02d–%02d %s",
+                         ifelse(hour_block == 0, 12, ifelse(hour_block > 12, hour_block - 12, hour_block)),
+                         ifelse(hour_block + 2 == 12, 12, ifelse(hour_block + 2 > 12, hour_block + 2 - 12, hour_block + 2)),
+                         ifelse(hour_block < 12, "AM", "PM")),
+    time_label = factor(time_label, levels = unique(time_label[order(hour_block)]))
+  ) %>%
+  count(member_casual, day_of_week, time_label) %>%
+  group_by(member_casual, day_of_week) %>%
+  mutate(
+    share = n / sum(n),
+    max_share = max(share),
+    intensity = share / max_share,
+    label = if_else(share == max_share, paste0(round(share * 100), "%"), NA_character_)
+  ) %>%
+  ungroup()
+
+# Set factor order
+hourly_data$day_of_week <- factor(hourly_data$day_of_week,
+  levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+
+# Apply group-specific intensity scaling using official rider colors
+hourly_data$fill_color <- mapply(function(user, val) {
+  col <- cyclistics_colors[[user]]
+  base <- col2rgb(col) / 255
+  rgb(1 - (1 - base[1]) * val,
+    1 - (1 - base[2]) * val,
+    1 - (1 - base[3]) * val)
+}, hourly_data$member_casual, hourly_data$intensity)
+
+
+# Build plot
+dot_plot <- ggplot(hourly_data, aes(x = day_of_week, y = time_label)) +
+      geom_tile(
+    data = data.frame(
+      member_casual = rep(c("member", "casual"), each = 2),
+      day_of_week = rep(c("Saturday", "Sunday"), 2),
+      time_label = rep(levels(hourly_data$time_label)[1], 4)
+    ),
+    aes(x = day_of_week, y = time_label),
+    width = 1, height = Inf,
+    fill = "darkgreen", alpha = 0.1,
+    inherit.aes = FALSE
+  ) +
+  # Weekend label
+  annotate("text", x = 6.5, y = tail(levels(hourly_data$time_label), .5),
+           label = "Weekend", fontface = "plain", size = 3.5,
+           color = "darkgreen", vjust = -1, clip = "off") +
+  # Plot layers
+  geom_point(aes(size = share, fill = fill_color), shape = 21,
+           color = "black", stroke = 0.3, show.legend = FALSE) +
+  # Outline layer
+geom_text(aes(label = label), size = 4.5, color = "black", fontface = "bold", na.rm = TRUE) +
+# Foreground layer
+geom_text(aes(label = label), size = 4.5, color = "white", fontface = "bold", na.rm = TRUE) +
+  
+  scale_fill_identity() +
+  scale_size_continuous(range = c(1.5, 13)) +
+  facet_wrap(~ member_casual, ncol = 1) +
+  labs(
+    title = "Top Ride Time Blocks by Rider Type",
+    subtitle = "Dot size and color show each time block’s share of daily rides by rider type \n — highlighting peak periods averaged across the year.",
+    x = "Day of Week",
+    y = "Time of Day (2-Hour Intervals)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+  strip.text = element_text(face = "bold", size = 14),
+  panel.spacing = unit(1, "lines"),
+  plot.margin = margin(t = 30, r = 10, b = 10, l = 10),
+  plot.title = element_text(face = "bold", hjust = 0.5),
+  plot.subtitle = element_text(hjust = 0.5),
+  clip = "off"
+  )
+
+# Save plot
+ggsave("hourly_dot_chart_v9_web.png", plot = dot_plot, width = 8, height = 12, dpi = 300)
+```
+</details>
+
+
+```{r embed-hourly-dot, echo=FALSE, eval=TRUE}
+knitr::include_graphics("hourly_dot_chart_v9_web.png")
+```
+
+**Results:**\
+Member rides exhibit clear peaks during weekday morning commute hours
+(7–9 AM) and evening commute hours (4–6 PM), consistent with regular
+workday travel patterns. In contrast, casual riders show a broader peak
+in midday usage (11 AM to 3 PM) and heightened activity on weekends,
+reflecting more flexible and recreational ride behavior. This distinct
+usage pattern underscores the routine commuting nature of members versus
+the leisure-oriented preferences of casual riders.
+
+
+## 7.6 Station Usage
+
+This section identifies the most active stations in the Cyclistic network for both casual riders and annual members. By mapping and ranking the top 10 stations used by each group, we highlight geographic and behavioral differences in ridership. These insights support targeted marketing and operational decisions, ensuring that promotional efforts and resource allocation reflect real-world usage patterns.
+
+<details>
+<summary><strong>Show Code</strong></summary>
+```{r}
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(scales)
+
+cyclistics_colors <- c(
+  "member" = "#1f77b4",   # Blue
+  "casual" = "#ff7f0e"    # Orange
+)
+
+# Add or refresh 'is_outlier' column for consistent filtering throughout analysis
+if (!"is_outlier" %in% names(eda_data)) {
+  eda_data <- eda_data %>%
+    mutate(is_outlier = ride_length > 36.0)
+}
+
+# Table function
+get_top_stations <- function(data, group_col, station_col) {
+  out <- data %>%
+    filter(member_casual == group_col) %>%
+    count({{station_col}}, sort = TRUE) %>%
+    slice_head(n = 10) %>%
+    rename(Station = {{station_col}}, Rides = n)
+  out$Rides <- comma(out$Rides)
+  out
+}
+
+# Top 10 locations for map plotting (combines starts & ends)
+get_top10_usage_locations <- function(data, group_col) {
+  data %>%
+    filter(member_casual == group_col) %>%
+    select(start_station_name, start_lat, start_lng, end_station_name, end_lat, end_lng) %>%
+    pivot_longer(
+      cols = starts_with("start_station_name"):ends_with("end_lng"),
+      names_to = c("type", ".value"),
+      names_pattern = "(start|end)_(station_name|lat|lng)"
+    ) %>%
+    count(station_name, lat, lng, sort = TRUE) %>%
+    slice_head(n = 10)
+}
+```
+
+
+```{r shared-bbox-map-member, fig.width=16, fig.height=8, out.width='100%', message=FALSE, warning=FALSE}
+# Generate tables for display
+casual_start <- get_top_stations(eda_data, "casual", start_station_name)
+casual_end   <- get_top_stations(eda_data, "casual", end_station_name)
+member_start <- get_top_stations(eda_data, "member", start_station_name)
+member_end   <- get_top_stations(eda_data, "member", end_station_name)
+
+# Overlap for columns
+casual_start_names <- casual_start$Station
+casual_end_names   <- casual_end$Station
+member_start_names <- member_start$Station
+member_end_names   <- member_end$Station
+
+# Casual Table with Overlap
+casual_tbl <- cbind(
+  "Top 10 Start Stations" = casual_start$Station,
+  "Rides (Start)" = casual_start$Rides,
+  "Also Top 10 End?" = ifelse(casual_start$Station %in% casual_end_names, "✔", ""),
+  "Top 10 End Stations" = casual_end$Station,
+  "Rides (End)" = casual_end$Rides,
+  "Also Top 10 Start?" = ifelse(casual_end$Station %in% casual_start_names, "✔", "")
+)
+
+# Member Table with Overlap
+member_tbl <- cbind(
+  "Top 10 Start Stations" = member_start$Station,
+  "Rides (Start)" = member_start$Rides,
+  "Also Top 10 End?" = ifelse(member_start$Station %in% member_end_names, "✔", ""),
+  "Top 10 End Stations" = member_end$Station,
+  "Rides (End)" = member_end$Rides,
+  "Also Top 10 Start?" = ifelse(member_end$Station %in% member_start_names, "✔", "")
+)
+
+# Output tables
+cat("**Casual Riders**\n")
+kable(casual_tbl, align = "lrrlrr") %>% kable_styling(full_width = FALSE)
+
+cat("\n\n**Member Riders**\n")
+kable(member_tbl, align = "lrrlrr") %>% kable_styling(full_width = FALSE)
+```
+
+```{r get-maps-data, message=FALSE, warning=FALSE}
+# Get map data for both groups
+top10_member <- get_top10_usage_locations(eda_data, "member")
+top10_casual <- get_top10_usage_locations(eda_data, "casual")
+
+top10_casual$dot_id <- 1:nrow(top10_casual)
+top10_member$dot_id <- 1:nrow(top10_member)
+
+cyclistics_colors <- c(
+  "member" = "#1f77b4",   # Blue
+  "casual" = "#ff7f0e"    # Orange
+)
+# (rest of your code for map data prep...)
+
+
+# Bounding box covering all
+all_lng <- c(top10_member$lng, top10_casual$lng)
+all_lat <- c(top10_member$lat, top10_casual$lat)
+bbox <- c(
+  left   = min(all_lng) - 0.03,
+  bottom = min(all_lat) - 0.01,
+  right  = max(all_lng) + 0.03,
+  top    = max(all_lat) + 0.01
+)
+
+# Download map once for both
+library(ggmap)
+library(ggrepel)
+register_stadiamaps(key = "0cde5034-d815-4778-a1f8-b1d15eb70b0b")
+chicago_map <- get_stadiamap(
+  bbox = bbox,
+  zoom = 13,
+  maptype = "outdoors",
+  size = c(1500, 3000) # Tall/narrow map tiles
+)
+```
+</details>
+
+<table style="width:100%;table-layout:fixed;">
+<tr>
+<td style="vertical-align:top; width:50%;">
+
+```{r casual-map, fig.width=6, fig.height=12, out.width='100%', fig.align='center', echo=FALSE}
+ggmap(chicago_map) +
+  geom_point(
+    data = top10_casual,
+    aes(x = lng, y = lat, size = n),
+    color = cyclistics_colors["casual"],
+    alpha = 0.8
+  ) +
+  geom_text(
+    data = top10_casual,
+    aes(x = lng, y = lat, label = dot_id),
+    color = "white",
+    fontface = "bold",
+    size = 4
+  ) +
+  scale_size_continuous(range = c(8, 20), guide = "none") +
+  labs(title = "Top 10 Casual Rider Stations") +
+  theme_void(base_size = 14) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+```
+```{r, echo=FALSE}
+top10_casual %>%
+  select(Dot = dot_id, `Station Name` = station_name, `Total Uses` = n) %>%
+  mutate(`Total Uses` = scales::comma(`Total Uses`)) %>%
+  kable(align = c("l", "l", "r")) %>%   # l=left, r=right
+  kable_styling(full_width = FALSE, position = "center") %>%
+  row_spec(0:nrow(top10_casual), extra_css = "line-height: 1.1; padding-top: 2px; padding-bottom: 2px;")
+
+```
+</td>
+<td style="vertical-align:top; width:50%;">
+
+```{r member-map, fig.width=6, fig.height=12, out.width='100%',fig.align='center', echo=FALSE}
+ggmap(chicago_map) +
+  geom_point(
+    data = top10_member,
+    aes(x = lng, y = lat, size = n),
+    color = cyclistics_colors["member"],
+    alpha = 0.8
+  ) +
+  geom_text(
+    data = top10_member,
+    aes(x = lng, y = lat, label = dot_id),
+    color = "white",
+    fontface = "bold",
+    size = 4
+  ) +
+  scale_size_continuous(range = c(8, 20), guide = "none") +
+  labs(title = "Top 10 Member Rider Stations") +
+  theme_void(base_size = 14) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+```
+```{r, echo=FALSE}
+top10_member %>%
+  select(Dot = dot_id, `Station Name` = station_name, `Total Uses` = n) %>%
+  mutate(`Total Uses` = scales::comma(`Total Uses`)) %>%
+  kable(align = c("l", "l", "r")) %>%   # l=left, r=right
+  kable_styling(full_width = FALSE, position = "center") %>%
+  row_spec(0:nrow(top10_casual), extra_css = "line-height: 1.1; padding-top: 2px; padding-bottom: 2px;")
+```
+
+</td> </tr> </table> 
+
+**Results:**\
+The maps and tables above reveal that casual riders predominantly
+use stations near major tourist attractions and along the lakeshore,
+such as Streeter Dr & Grand Ave, Millennium Park, and Shedd Aquarium.
+Annual members favor stations in business districts and transit hubs,
+such as Kingsbury St & Kinzie St and Clinton St & Washington Blvd.
+
+Both groups have overlapping top stations, but the spatial patterns
+and volume differences underscore the recreational focus of casual
+riders and the routine, commuter-oriented patterns of members. These
+findings support targeted marketing strategies by location and
+rider type.
+
+## 7.7 Casual User Hotspots
+
+This section identifies the top 10 stations most frequently used by casual riders on weekends. By analyzing hourly ride patterns at these hotspots, we can better understand when and where casual riders are most active, supporting more targeted marketing and outreach efforts.
+
+<details>
+<summary>Show Code</summary>
+```{r weekend-top-stations-plot, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+# 1. Prepare data: filter to weekends, casual riders, top 10 locations
+plot_data <- eda_data %>%
+    filter(
+        member_casual == "casual",
+        day_of_week %in% c("Saturday", "Sunday"),
+        !is.na(start_station_name)
+    ) %>%
+    mutate(hour_of_day = hour(started_at)) %>%
+    group_by(start_station_name, hour_of_day) %>%
+    summarise(rides = n(), .groups = "drop")
+
+# 2. Identify top 10 locations by total rides
+top_stations <- plot_data %>%
+    group_by(start_station_name) %>%
+    summarise(total_rides = sum(rides), .groups = "drop") %>%
+    arrange(desc(total_rides)) %>%
+    slice_head(n = 10) %>%
+    pull(start_station_name)
+
+plot_data_top <- plot_data %>%
+    filter(start_station_name %in% top_stations) %>%
+    mutate(
+        start_station_name = factor(
+            start_station_name,
+            levels = top_stations  # Ensures ordered by total rides
+        )
+    )
+
+# 3. Filter hours 8–22
+plot_data_filtered <- plot_data_top %>% 
+    filter(hour_of_day >= 8 & hour_of_day <= 22)
+
+# 4. Generate and save plot
+my_plot <- ggplot(plot_data_filtered, aes(x = hour_of_day, y = rides, color = start_station_name, group = start_station_name)) +
+    geom_line(size = 1) +
+    facet_wrap(~ start_station_name, ncol = 2, scales = "free_y") +
+    labs(
+        title = "Most Used Locations by Hour (Weekends, Casual Users)",
+        subtitle = "Top 10 locations by total rides, Saturdays and Sundays only",
+        x = "Hour of Day",
+        y = "Number of Rides",
+        color = "Location"
+    ) +
+    scale_x_continuous(
+        breaks = 8:22,
+        labels = as.character(8:22)
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(legend.position = "none")
+
+ggsave("weekend_top_stations.png", plot = my_plot, width = 10, height = 8, dpi = 150)
+
+
+```
+</details>
+
+```{r echo = FALSE}
+knitr::include_graphics("weekend_top_stations.png")
+```
+**Results:**\
+The analysis shows that weekend activity among casual riders is highly concentrated at a handful of stations. These top 10 locations experience the highest ride volumes during core daytime hours, particularly from late morning through early evening. Peaks in ridership typically occur between 11 AM and 6 PM. Focusing marketing resources at these hotspots—especially during peak hours—will maximize visibility and engagement with casual users.
+
+## 7.8 Bike type Usage
+
+This section compares usage patterns for classic bikes, electric bikes, and scooters across rider types.
+
+<details>
+<summary>Show Code</summary>
+```{r bike-type-usage-save, eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(scales)
+library(ggplot2)
+library(ggtext)
+
+# Data prep
+bar_data <- eda_data %>%
+  filter(!is_outlier) %>%
+  group_by(member_casual, rideable_type) %>%
+  summarise(Rides = n(), .groups = "drop") %>%
+  group_by(member_casual) %>%
+  mutate(
+    Share = Rides / sum(Rides),
+    label = paste0("<b>", percent(Share, accuracy = 1), "</b><br>", comma(Rides)),
+    label_y = Rides + max(Rides) * 0.04 # to show label in correct position
+  ) %>%
+  ungroup()
+
+bike_type_labels <- c(
+  classic_bike = "Classic\nBike",
+  electric_bike = "Electric\nBike",
+  electric_scooter = "Electric\nScooter"
+)
+
+cyclistics_colors <- c(
+  "member" = "#1f77b4",   # Blue
+  "casual" = "#ff7f0e"    # Orange
+)
+
+bike_type_palette <- c(
+  "classic_bike" = "#8d5524",
+  "electric_bike" = "#7B9E87",
+  "electric_scooter" = "#BFA980"
+)
+
+bike_type_emoji <- c(
+  classic_bike = "🚲",
+  electric_bike = "⚡🚲",
+  electric_scooter = "🛴"
+)
+
+bike_type_plot <- ggplot(
+    bar_data,
+    aes(x = member_casual, y = Rides, fill = rideable_type)
+  ) +
+  geom_col(
+    position = position_dodge(width = 0.8), width = 0.7, show.legend = FALSE
+  ) +
+  ggtext::geom_richtext(
+    aes(y = label_y, label = label, group = rideable_type),
+    position = position_dodge(width = 0.8),
+    vjust = 0,
+    fill = NA, label.color = NA,
+    color = "black", size = 4, lineheight = 1.1
+  ) +
+  geom_text(
+    aes(
+      label = bike_type_emoji[as.character(rideable_type)],
+      y = 3000   
+    ),
+    position = position_dodge(width = 0.8),
+    size = 7,
+    vjust = 0,
+    family = "Segoe UI Emoji" # Remove or change for Mac/Linux
+  ) +
+  scale_fill_manual(
+    values = bike_type_palette
+  ) +
+  scale_x_discrete(
+  labels = c(
+    casual = "<span style='color:#ff7f0e; font-size:18px;'>&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;</span><br><br><b>Casual</b>",
+    member = "<span style='color:#1f77b4; font-size:18px;'>&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;</span><br><br><b>Member</b>"
+  )
+) +
+  scale_y_continuous(
+    labels = scales::comma,
+    trans = "sqrt",
+    expand = expansion(mult = c(0, 0.18))
+  ) +
+  labs(
+    title = "Ride Counts by Rider and Bike Type",
+    x = "Rider Type",
+    y = "Number of Rides"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5, size = 18, face = "bold", margin = margin(b = 20)
+    ),
+    axis.title.x = element_text(size = 16, margin = margin(t = 12)),
+    axis.text.x = ggtext::element_markdown(size = 16, face = "bold"),
+    legend.position = "none"
+  )
+
+ggsave("bike_type_usage_v9.png", plot = bike_type_plot, width = 8, height = 5, dpi = 150)
+
+
+```
+</details>
+```{r echo=FALSE}
+knitr::include_graphics("bike_type_usage_v9.png")
+
+```
+
+**Results:**\
+Classic bikes (Brown bars) are by far the most popular vehicle choice
+for both members and casual riders, representing a clear preference
+across all users. Electric bikes (Green bars) are a strong secondary
+option, with notably higher adoption among casual riders than members.
+While electric scooters (Tan bars) are available, they make up only a
+tiny fraction of trips for both groups.
+
+Key insights: Classic bikes dominate overall usage and are the primary
+mode for both segments. Casual riders show greater diversity in vehicle
+selection, opting for electric bikes and scooters more frequently than
+members. Electric scooters have limited appeal, indicating that most
+riders, regardless of membership status, favor bikes over scooters for
+their trips.
+
+# 8 Key Findings 
+
+Casual riders primarily use the service near popular attractions and high-traffic areas, indicating strong demand from tourists and recreational users.
+
+Casual riders consistently take longer and more varied trips than members, with the biggest differences on weekends—highlighting leisure-oriented usage.
+
+Casual usage is more evenly distributed throughout the day and peaks on weekends and afternoons, in contrast to members, whose rides cluster around traditional commute hours.
+
+Seasonal patterns are evident, with overall usage peaking during warmer months and at central stations that serve both visitors and commuters.
+
+Members use the system more frequently and for shorter, regular trips, consistent with commuting and utilitarian travel.
+
+Excluding outlier rides (>36 minutes) sharpened the behavioral comparison, focusing the analysis on typical ride patterns.
+
+Bike type differences are notable: Classic bikes remain the top choice for all users, electric bikes are more popular among casual riders but still secondary, and scooters account for only a tiny share of total rides.
+
+# 9. Recommendations
+
+Enhance Station-Level Marketing Using Location Data
+
+To further optimize marketing strategies and drive casual ridership and
+conversion to members we recommend leveraging the Google Places API (or
+similar external data sources) to identify restaurants, bars,
+attractions, and other points of interest within a half-mile radius of
+the most-used stations. This approach can help:
+
+-Target promotional campaigns at locations with high tourist or dining
+activity.
+
+-Inform partnership opportunities with local businesses.
+
+-Support decisions on seasonal station rebalancing or placement.
+
+This location-based enrichment can provide the marketing team with
+actionable intelligence for hyper-local outreach, sponsorships, and
+cross-promotion efforts.
+
+(See Appendix for an example workflow and R code.)
+
+# 10. Limitations
+
+This analysis is limited to Cyclistics ride data from 2024. Individual rider account details and pricing information were not available, which restricted the ability to assess user-level behavior or conduct pricing sensitivity analysis. Access to these additional data sources would enable a deeper understanding of rider segments, trip motivations, and price responsiveness.
+
+# 11. Appendix
+
+This workflow is an example for the marketing team identifying
+high-value partnership opportunities and craft targeted outreach based
+on actual neighborhood business activity.
+
+Table: Example of restaurants, bars, and attractions within 0.5 miles of
+top casual rider stations (Google Places API, May 2025)
+
+
+<details>
+<summary><strong>Show Code</strong></summary>
+```{r eval=FALSE}
+library(dplyr)
+library(readr)
+
+top10_casual_with_locs <- eda_data %>%
+  filter(member_casual == "casual", !is.na(start_station_name)) %>%
+  count(start_station_name, sort = TRUE) %>%
+  slice_head(n = 10) %>%
+  left_join(
+    eda_data %>%
+      group_by(start_station_name) %>%
+      summarize(
+        start_lat = first(na.omit(start_lat)),
+        start_lng = first(na.omit(start_lng)),
+        .groups = "drop"
+      ),
+    by = "start_station_name"
+  ) %>%
+  mutate(
+    start_lat = sprintf("%.5f", as.numeric(start_lat)),
+    start_lng = sprintf("%.5f", as.numeric(start_lng))
+  )
+
+write_csv(top10_casual_with_locs, "appendix_top10_casual_2024.csv")
+
+```
+
+```{r eval=FALSE}
+library(httr)
+library(jsonlite)
+library(readr)
+library(dplyr)
+library(purrr)
+
+api_key <- Sys.getenv("GOOGLE_API_KEY") # Use environmental variable
+search_radius <- 800  # About 0.5 miles in meters
+
+top10 <- read_csv("appendix_top10_casual_2024.csv")
+
+get_places <- function(lat, lng) {
+  url <- paste0(
+    "https://maps.googleapis.com/maps/api/place/nearbysearch/json?",
+    "location=", lat, ",", lng,
+    "&radius=", search_radius,
+    "&type=restaurant|bar|tourist_attraction",
+    "&key=", api_key
+  )
+  response <- httr::GET(url)
+  content <- httr::content(response, as = "text", encoding = "UTF-8")
+  json <- jsonlite::fromJSON(content, flatten = TRUE)
+  results <- json$results
+  if (is.null(results) || nrow(results) == 0) return(NULL)
+  
+  n <- nrow(results)
+  # Defensive extraction: handles missing, empty, or weird structures
+  tibble(
+    name = if (!is.null(results$name)) results$name else rep(NA_character_, n),
+    address = if (!is.null(results$vicinity)) results$vicinity else rep(NA_character_, n),
+    place_type = if (!is.null(results$types)) sapply(results$types, function(x) if (length(x) == 0) NA_character_ else paste(x, collapse = ", ")) else rep(NA_character_, n),
+    lat = if (!is.null(results$geometry.location.lat)) results$geometry.location.lat else rep(NA_real_, n),
+    lng = if (!is.null(results$geometry.location.lng)) results$geometry.location.lng else rep(NA_real_, n)
+  )
+}
+
+# Loop over each top station, collecting places
+all_places <- purrr::pmap_dfr(
+  top10[, c("start_station_name", "start_lat", "start_lng")],
+  function(start_station_name, start_lat, start_lng) {
+    places <- get_places(start_lat, start_lng)
+    if (!is.null(places)) {
+      places$station <- start_station_name
+      return(places)
+    } else {
+      return(NULL)
+    }
+  }
+)
+
+write_csv(all_places, "appendix_places_nearby_top10.csv")
+
+```
+
+```{r eval=FALSE}
+library(readr)
+library(knitr)
+library(kableExtra)
+
+if (file.exists("appendix_places_nearby_top10.csv")) {
+  all_places <- read_csv("appendix_places_nearby_top10.csv", show_col_types = FALSE)
+  if (nrow(all_places) > 0) {
+    # Select & rename columns for readability if desired
+    colnames(all_places) <- gsub("_", " ", colnames(all_places))
+    kable(
+      all_places,
+      caption = "Restaurants, Bars, and Attractions Near Top 10 Casual Rider Stations (Google Places API, May 2025)",
+      align = "l"
+    ) %>%
+    kable_styling(
+      bootstrap_options = c("striped", "hover", "condensed"),
+      full_width = FALSE,
+      position = "left"
+    ) %>%
+    scroll_box(height = "350px")
+  } else {
+    cat("No nearby places found in the CSV. Please check your enrichment results.")
+  }
+} else {
+  cat("API enrichment table not yet generated. Run the save chunk first.")
+}
+```
+</details>
